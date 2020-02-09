@@ -1,8 +1,12 @@
-import torch 
+import torch
+import torch.nn as nn
+
+from snake_ann import SnakeANN
 
 import pygame
 
 import time
+import random
 
 
 
@@ -11,15 +15,16 @@ height = 30
 square_size = 10
 
 snake_color = (255, 255, 255)
+food_color = (0, 255, 0)
 
-playfield = torch.zeros([width, height])
+playfield = torch.zeros([width, height]).cuda()
 
 
 class Player:
 	x = []
 	y = []
 
-	direction = 0
+	direction = 1
 	length = 4
 
 	def __init__(self):
@@ -58,6 +63,7 @@ class Player:
 
 		# Check if snake has run into itself
 		if playfield[self.x[0], self.y[0]] == -1:
+			print("Snake!")
 			return -1
 		
 		# Add new position of head square to game field
@@ -81,12 +87,15 @@ def render(screen):
 	for x in range(width):
 		for y in range(height):
 			if playfield[x, y] == -1:
-				pygame.draw.rect(screen, snake_color, pygame.Rect(x*square_size, y*square_size, square_size, square_size))
+				pygame.draw.rect(screen, food_color, pygame.Rect(x*square_size+1, y*square_size+1, square_size-2, square_size-2))
+			elif playfield[x, y] == 1:
+				pygame.draw.rect(screen, food_color, pygame.Rect(x*square_size+1, y*square_size+1, square_size-2, square_size-2))
 
 
-def game_loop():
+
+def game_loop(player):
 	pygame.init()
-	screen = pygame.display.set_mode((width*10, height*10))
+	screen = pygame.display.set_mode((width*square_size, height*square_size))
 	clock = pygame.time.Clock()
 	snake_player = Player()
 
@@ -97,20 +106,34 @@ def game_loop():
 			if event.type == pygame.QUIT:
 				done = True
 
-		render(screen)
+		
+
+		output = nn.functional.softmax( player.forward(playfield), 0 )
+
+		r = random.uniform(0, 1)
+		if output[0] < r:
+			snake_player.turn_left()
+		elif output[0]+output[1] < r:
+			snake_player.turn_right()
+
+
 
 		alive = snake_player.update()
 
 		if alive == -1:
 			done = True
 
-		clock.tick(10)
-
 		# Update screen with new image
+		render(screen)
 		pygame.display.flip()
 
 
+		clock.tick(10)
+
+		
 
 
+snake_brain = SnakeANN(width*height)
 
-game_loop()
+
+game_loop(snake_brain)
