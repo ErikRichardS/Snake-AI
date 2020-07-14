@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 
-from snake_ann import SnakeANN
-import learner as lr
+#from snake_ann import SnakeANN
+#import learner as lr
+from hamilton_brain import HamiltonBrain
 from settings import *
+
 
 import pygame
 
@@ -65,7 +67,6 @@ class Player:
 			self.y.append(tail_coord[1])
 			playfield[tail_coord] = -1
 			playfield[self.x[0], self.y[0]] = -1
-			place_food()
 			return 1
 		else:
 			playfield[self.x[0], self.y[0]] = -1
@@ -82,6 +83,12 @@ class Player:
 		if self.direction < 0:
 			self.direction = 3
 
+	def set_direction(self, direction):
+		self.direction = direction
+
+	def get_body_coordinates(self):
+		return (self.x, self.y)
+
 def render(screen):
 	screen.fill((0, 0, 0))
 
@@ -91,43 +98,78 @@ def render(screen):
 				pygame.draw.rect(screen, snake_color, pygame.Rect(x*square_size+1, y*square_size+1, square_size-2, square_size-2))
 			elif playfield[x, y] == 1:
 				pygame.draw.rect(screen, food_color, pygame.Rect(x*square_size+1, y*square_size+1, square_size-2, square_size-2))
+			elif playfield[x, y] == -2: 
+				pygame.draw.rect(screen, neck_color, pygame.Rect(x*square_size+1, y*square_size+1, square_size-2, square_size-2))
+			elif playfield[x, y] == -3: 
+				pygame.draw.rect(screen, head_color, pygame.Rect(x*square_size+1, y*square_size+1, square_size-2, square_size-2))
 
 def place_food():
-	placed = False
 
-	while not placed:
+	for i in range(100):
 		random_x = random.randrange(width)
 		random_y = random.randrange(height)
 
 		if playfield[random_x, random_y] != -1:
 			playfield[random_x, random_y] = 1
-			placed = True
+			return (random_x, random_y)
+
+	for x in range(width):
+		for y in range(height):
+			if playfield[x, y] != -1:
+				playfield[x, y] = 1
+				return (x, y)
+
+	return (-1, -1)
+
 
 def game_loop(screen, playfield, brain):
 	clock = pygame.time.Clock()
 	snake_player = Player(playfield)
 
-	place_food()
+	food_coord = place_food()
 
 	done = False
+	pause = False
+
+	final_score = 0
 
 	while not done:	
 		for event in pygame.event.get():
 			if event.type == pygame.QUIT:
 				done = True
+			if pygame.key.get_pressed()[pygame.K_SPACE]:
+				pause = not pause
 
+		
+		#last_move = playfield.clone()
+		if not pause:
+			direction = brain.decide( playfield, snake_player.get_body_coordinates(), food_coord )
+			snake_player.set_direction(direction)
 
-		lr.make_choice(brain, playfield, snake_player)
+			status = snake_player.update(playfield)
 
-		status = snake_player.update(playfield)
+			if status == 1:
+				final_score += 1
+				food_coord = place_food()
+				if food_coord[0] == -1:
+					print("Game won!")
+					done = True
+			elif status == -1:
+				pause = True
+				#playfield = last_move.clone()
+				snake = snake_player.get_body_coordinates()
+				playfield[snake[0][0], snake[1][0]] = -3
+				playfield[snake[0][1], snake[1][1]] = -2
+				playfield[snake[0][-1], snake[1][-1]] = -3
+				render(screen)
+				pygame.display.flip()
 
-		if status == 1:
-			lr.train(brain, 1)
+				print("Snake died")
+				while True: 
+					n = 1
 
-		elif status == -1:
-			lr.train(brain, -1)
-			done = True
-
+			
+		
 		# Update screen with new image
 		render(screen)
 		pygame.display.flip()
@@ -137,18 +179,23 @@ def game_loop(screen, playfield, brain):
 
 		#clock.tick(60)
 
+	return final_score
+
 		
 
 
-snake_brain = SnakeANN(width*height)
-lr.initialize(snake_brain)
+#snake_brain = SnakeANN(width*height)
+#lr.initialize(snake_brain)
 
 pygame.init()
 screen = pygame.display.set_mode((width*square_size, height*square_size))
+
+
+
 #playfield = torch.zeros([width, height]).cuda()
 
-while True:
-	playfield = torch.zeros([width, height]).cuda()
-	game_loop(screen, playfield, snake_brain)
-	torch.save(snake_brain, "snake_brain.pt")
-	print("Restart")
+for i in range(1):
+	playfield = torch.zeros([width, height])
+	snake_brain = HamiltonBrain(playfield)
+	score = game_loop(screen, playfield, snake_brain)
+	print(score)
